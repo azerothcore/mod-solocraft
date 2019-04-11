@@ -1,12 +1,14 @@
 [worldserver]
-#
-###################################################################################################
 
-###################################################################################################
-#
-#     Solocraft.Enable
-#        Description: Solocraft is a script to increase players and bots stats in raids, 
-#		 based on group size. It feels a little Hacky, but raids is unfair hard with playerbots.
-#        Default:     0
+# Enable the module? (1: true | 0: false)
+Solocraft.Enable = 1
 
-Solocraft.Enable = 0
+# Announce the module when the player logs in?
+Solocraft.Announce = 1
+
+# Difficulty Multipliers
+# Defaults: 5, 10, 25, 10
+Solocraft.Dungeon = 5 
+Solocraft.Heroic = 10
+Solocraft.Raid25 = 25
+Solocraft.Raid40 = 10
