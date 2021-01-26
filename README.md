@@ -5,13 +5,19 @@
 
 ## Description
 
-- Adjusts player stats for raids based on the # of players in the group
-- Config: Difficulty settings for each instance type
-
+- Adjusts player stats for raids based on the # of players in the group - This now works.
+- Configurable debuff for groups trying to overload the difficulty modifier for an instance
+- Adjustable stats modifier in config
+- Config: Difficulty settings for each instance and type
+- Now includes a Spellpower buff: Adjustable modifier in config
+- Saves your modifier settings in database. 
+- Max level thresholds can be set to not buff players whose level is too far over the dungeon level
+ 
 ## How to use ingame
 
 1. Enable in conf
-2. Enter Dungeon or Raid
+2. Go into conf and set any features you want to enable or modify
+3. Enter Dungeon or Raid
 
 ## Requirements
 
@@ -22,19 +28,20 @@
 
 ```
 1) Simply place the module under the `modules` directory of your AzerothCore source. 
-2) Re-run cmake and launch a clean build of AzerothCore.
+2) Import the SQL to the right Database (world)
+3) Re-run cmake and launch a clean build of AzerothCore.
 ```
 
 ## Edit module configuration (optional)
 
-If you need to change the module configuration, go to your server configuration folder (where your `worldserver` or `worldserver.exe` is), copy `emblem_transfer.conf.dist` to `emblem_transfer.conf` and edit that new file.
+If you need to change the module configuration, go to your server configuration folder (where your `worldserver` or `worldserver.exe` is), copy `Solocraft.conf.dist` to `Solocraft.conf` and edit that new file.
 
 ### Data ###
 ------------------------------------------------------------------------------------------------------------------
 - Type: Server/Player
 - Script: Solocraft
 - Config: Yes
-- SQL: No
+- SQL: Yes
 
 ### Credits ###
 ------------------------------------------------------------------------------------------------------------------
