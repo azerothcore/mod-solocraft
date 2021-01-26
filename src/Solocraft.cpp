@@ -15,6 +15,7 @@ uint32 D5 = 1;
 uint32 D10 = 1;
 uint32 D25 = 1;
 uint32 D40 = 1;
+uint32 DSS = 1;
 
 class SolocraftConfig : public WorldScript
 {
@@ -45,6 +46,7 @@ public:
         D10 = sConfigMgr->GetIntDefault("Solocraft.Heroic", 10);
         D25 = sConfigMgr->GetIntDefault("Solocraft.Raid25", 25);
         D40 = sConfigMgr->GetIntDefault("Solocraft.Raid40", 40);
+        DSS = sConfigMgr->GetIntDefault("Solocraft.Stockades", 25);
     }
 };
 class SolocraftAnnounce : public PlayerScript
@@ -101,6 +103,9 @@ private:
             if (map->Is25ManRaid()) {
                 difficulty = D25;
             }
+            else if (map->GetId() == 34) {
+                difficulty = DSS;
+			}
             else if (map->IsHeroic()) {
                 difficulty = D10;
             }
@@ -128,8 +133,6 @@ private:
     // Apply the player buffs
     void ApplyBuffs(Player* player, Map* map, int difficulty, int /*numInGroup*/)
     {
-        ClearBuffs(player, map);
-
         if (difficulty > 1)
         {
             // InstanceMap *instanceMap = map->ToInstanceMap();
@@ -156,6 +159,8 @@ private:
                 player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
             }
         }
+		else
+			ClearBuffs(player, map);
     }
 
     void ClearBuffs(Player* player, Map* map)
