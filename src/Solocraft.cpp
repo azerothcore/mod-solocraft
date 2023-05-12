@@ -42,10 +42,11 @@ public:
 
     void OnBeforeConfigLoad(bool reload) override
     {
-        if (!reload) {
-            // Load Configuration Settings
-            SetInitialWorldSettings();
-        }
+        // Squelch compile warning
+        (void) reload;
+
+        // Load Configuration Settings
+        SetInitialWorldSettings();
     }
 
     // Load Configuration Settings
