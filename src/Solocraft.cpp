@@ -485,7 +485,7 @@ public:
     }
 
     // Resets buffers
-    void ClearBuffs(Player* player, Map* map)
+    void ClearBuffs(Player* player)
     {
         //Database query to get offset from the last instance player exited
         QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
@@ -691,12 +691,12 @@ public:
                 // Announce to player - Over Max Level Threshold
                 ss << "|cffFF0000[SoloCraft] |cffFF8000" << player->GetName() << " entered %s  - |cffFF0000You have not been buffed. |cffFF8000 Your level is higher than the max level (%i) threshold for this dungeon.";
                 ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str(), map->GetMapName(), dunLevel + SolocraftLevelDiff);
-                ClearBuffs(player, map); // Check to revert player back to normal
+                ClearBuffs(player); // Check to revert player back to normal
             }
         }
         else
         {
-            ClearBuffs(player, map); // Check to revert player back to normal - Moving this here fixed logout and login while in instance buff and debuff issues
+            ClearBuffs(player); // Check to revert player back to normal - Moving this here fixed logout and login while in instance buff and debuff issues
         }
     }
 
