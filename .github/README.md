@@ -1,7 +1,10 @@
 # ![logo](https://raw.githubusercontent.com/azerothcore/azerothcore.github.io/master/images/logo-github.png) AzerothCore
-## mod-solocraft
-- Latest build status with azerothcore: [![Build Status](https://github.com/azerothcore/mod-solocraft/workflows/core-build/badge.svg?branch=master&event=push)](https://github.com/azerothcore/mod-solocraft)
 
+## mod-solocraft
+
+- Latest build status with azerothcore:
+
+[![Build Status](https://github.com/azerothcore/mod-solocraft/workflows/core-build/badge.svg?branch=master&event=push)](https://github.com/azerothcore/mod-solocraft)
 
 ## Description
 
@@ -23,7 +26,6 @@
 
 - AzerothCore v1.0.1+
 
-
 ## Installation
 
 ```
@@ -37,13 +39,16 @@
 If you need to change the module configuration, go to your server configuration folder (where your worldserver or worldserver.exe is), copy Solocraft.conf.dist to Solocraft.conf and edit that new file.
 
 ### Data ###
+
 ------------------------------------------------------------------------------------------------------------------
+
 - Type: Server/Player
 - Script: Solocraft
 - Config: Yes
 - SQL: Yes
 
 ### Credits ###
+
 ------------------------------------------------------------------------------------------------------------------
 - [DavidMacalaster](https://github.com/DavidMacalaster/Solocraft)
 - [Blizzard Entertainment](http://blizzard.com)
