@@ -40,11 +40,8 @@ class SolocraftConfig : public WorldScript
 public:
     SolocraftConfig() : WorldScript("SolocraftConfig") {}
 
-    void OnBeforeConfigLoad(bool reload) override
+    void OnBeforeConfigLoad(bool /*reload*/) override
     {
-        // Squelch compile warning
-        (void) reload;
-
         // Load Configuration Settings
         SetInitialWorldSettings();
     }
