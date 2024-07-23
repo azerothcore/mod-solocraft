@@ -533,7 +533,7 @@ public:
             }
 
             // If a player is too high level for dungeon don't buff but if in a group will count towards the group offset balancing.
-            if (player->getLevel() <= dunLevel + SolocraftLevelDiff)
+            if (player->GetLevel() <= dunLevel + SolocraftLevelDiff)
             {
 
                 // Get Current members total difficulty offset and if it exceeds the difficulty offset of the dungeon then debuff new group members coming in until all members leave and re-enter. This happens when a player already inside dungeon invite others to the group but the player already has the full difficulty offset.
@@ -628,7 +628,7 @@ public:
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        SpellPowerBonus = static_cast<int>((player->getLevel() * SoloCraftSpellMult) * difficulty);
+                        SpellPowerBonus = static_cast<int>((player->GetLevel() * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
                     }
                 }
