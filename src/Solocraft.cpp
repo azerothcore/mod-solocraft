@@ -11,6 +11,7 @@
 #include "Chat.h"
 #include <math.h>
 #include <unordered_map>
+#include "ObjectGuid.h"
 
 bool SoloCraftEnable = 1;
 bool SoloCraftAnnounceModule = 1;
@@ -309,6 +310,9 @@ public:
 
 class SolocraftAnnounce : public PlayerScript
 {
+private:
+    std::map<ObjectGuid, bool> playerInInstanceMap;
+
 public:
     SolocraftAnnounce() : PlayerScript("SolocraftAnnounce") {}
 
@@ -328,11 +332,24 @@ public:
             //Remove database entry as the player has logged out
             CharacterDatabase.Execute("DELETE FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         }
+        playerInInstanceMap.erase(player->GetGUID());
     }
 
-    void OnGiveXP(Player* /*player*/, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+    void OnMapChanged(Player* player) override
     {
-        if (SolocraftXPBalEnabled)
+        if (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid())
+        {
+            playerInInstanceMap[player->GetGUID()] = true;
+        }
+        else
+        {
+            playerInInstanceMap[player->GetGUID()] = false;
+        }
+    }
+
+    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+    {
+        if (SolocraftXPBalEnabled && playerInInstanceMap[player->GetGUID()])
         {
             // Decrease Experience based on number of players and difficulty of instance (0 to 100%)
             amount = uint32(amount * SoloCraftXPMod);
