@@ -16,6 +16,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cstdint>
 
 bool SoloCraftEnable = 1;
 bool SoloCraftAnnounceModule = 1;
