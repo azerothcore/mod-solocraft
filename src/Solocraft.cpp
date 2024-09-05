@@ -12,6 +12,10 @@
 #include <math.h>
 #include <unordered_map>
 #include "ObjectGuid.h"
+#include "utils/Utils.h"
+#include <iostream>
+#include <vector>
+#include <string>
 
 bool SoloCraftEnable = 1;
 bool SoloCraftAnnounceModule = 1;
@@ -28,6 +32,7 @@ std::unordered_map<uint8, uint32> classes;
 std::unordered_map<uint32, uint32> dungeons;
 std::unordered_map<uint32, float> diff_Multiplier;
 std::unordered_map<uint32, float> diff_Multiplier_Heroics;
+std::vector<uint32_t> SolocraftInstanceExcluded;
 
 float D5 = 1.0;
 float D10 = 1.0;
@@ -305,6 +310,9 @@ public:
         //Unique Raids beyond the heroic and normal versions of themselves
         D649H10 = sConfigMgr->GetOption<float>("Solocraft.ArgentTournamentRaidH10", 10.0);  //Trial of the Crusader 10 Heroic
         D649H25 = sConfigMgr->GetOption<float>("Solocraft.ArgentTournamentRaidH25", 25.0);  //Trial of the Crusader 25 Heroic
+
+        //Get from conf excluded map for Solocraft scaling
+        LoadList(sConfigMgr->GetOption<std::string>("Solocraft.Instance.Excluded", ""), SolocraftInstanceExcluded);
     }
 };
 
@@ -361,6 +369,11 @@ class SolocraftPlayerInstanceHandler : public PlayerScript
 {
 public:
     SolocraftPlayerInstanceHandler() : PlayerScript("SolocraftPlayerInstanceHandler") {}
+    
+    bool IsInSolocraftInstanceExcludedList(uint32 id)
+    {
+        return find(SolocraftInstanceExcluded.begin(), SolocraftInstanceExcluded.end(), id) != SolocraftInstanceExcluded.end();
+    }
 
     void OnMapChanged(Player* player) override
     {
@@ -380,6 +393,11 @@ public:
     {
         if (map)
         {
+            if (IsInSolocraftInstanceExcludedList(map->GetId()))
+            {
+                return 0;
+            }
+
             if (map->Is25ManRaid())
             {
                 if (map->IsHeroic() && map->GetId() == 649)
@@ -536,8 +554,12 @@ public:
     // Apply the player buffs
     void ApplyBuffs(Player* player, Map* map, float difficulty, int dunLevel, int numInGroup, int classBalance)
     {
-        // Check whether to buff the player or check to debuff back to normal
-        if (difficulty != 0)
+        // Check whether to debuff back to normal or check to buff the player
+        if (difficulty == 0 || IsInSolocraftInstanceExcludedList(map->GetId()))
+        {
+            ClearBuffs(player); // Check to revert player back to normal - Moving this here fixed logout and login while in instance buff and debuff issues
+        }
+        else
         {
             std::ostringstream ss;
 
@@ -708,10 +730,6 @@ public:
                 ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str(), map->GetMapName(), dunLevel + SolocraftLevelDiff);
                 ClearBuffs(player); // Check to revert player back to normal
             }
-        }
-        else
-        {
-            ClearBuffs(player); // Check to revert player back to normal - Moving this here fixed logout and login while in instance buff and debuff issues
         }
     }
 

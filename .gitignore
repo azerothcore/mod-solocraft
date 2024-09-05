@@ -46,3 +46,8 @@ local.properties
 .loadpath
 .project
 .cproject
+
+#
+# Visual Studio Code
+#
+.vscode/
