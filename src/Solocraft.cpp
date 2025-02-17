@@ -325,7 +325,7 @@ private:
 public:
     SolocraftAnnounce() : PlayerScript("SolocraftAnnounce") {}
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (SoloCraftEnable && SoloCraftAnnounceModule)
         {
@@ -333,7 +333,7 @@ public:
         }
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         QueryResult result = CharacterDatabase.Query("SELECT `GUID` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         if (result)
@@ -344,7 +344,7 @@ public:
         playerInInstanceMap.erase(player->GetGUID());
     }
 
-    void OnMapChanged(Player* player) override
+    void OnPlayerMapChanged(Player* player) override
     {
         if (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid())
         {
@@ -356,7 +356,7 @@ public:
         }
     }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+    void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
     {
         if (SolocraftXPBalEnabled && playerInInstanceMap[player->GetGUID()])
         {
@@ -376,7 +376,7 @@ public:
         return find(SolocraftInstanceExcluded.begin(), SolocraftInstanceExcluded.end(), id) != SolocraftInstanceExcluded.end();
     }
 
-    void OnMapChanged(Player* player) override
+    void OnPlayerMapChanged(Player* player) override
     {
         if (sConfigMgr->GetOption<bool>("Solocraft.Enable", true))
         {
