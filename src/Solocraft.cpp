@@ -629,7 +629,7 @@ public:
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        SpellPowerBonus = static_cast<int>((player->GetLevel() * SoloCraftSpellMult) * difficulty);
+                        SpellPowerBonus = static_cast<int>((player->GetBaseSpellPowerBonus() * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
                     }
                 }
