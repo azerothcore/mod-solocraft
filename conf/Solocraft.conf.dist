@@ -39,13 +39,13 @@ SoloCraft.Debuff.Enable = 1
 
 # Spellpower Bonus Multiplier
 # Spellcasters spellpower bonus multiplier to offset no spellpower received from stats
-# Formula: (player->level * multiplier) * ((classBalance / 100) * difficulty)
-# Example Level 24 Mage with default modifier and  a dungeon difficulty of 5 will receive a base 
+# Formula: (player->spellpower * multiplier) * ((classBalance / 100) * difficulty)
+# Example Mage with default modifier, 60 spel power bonus and a dungeon difficulty of 5 will receive a base 
 # Spellpower increase of 300.
 
-# Default:	2.5
+# Default:	1.0
 #			0.0 (Disable)
-SoloCraft.Spellpower.Mult = 2.5
+SoloCraft.Spellpower.Mult = 1.0
 
 
 # Stats Percentage Bonus Multiplier
