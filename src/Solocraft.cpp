@@ -8,6 +8,7 @@
 #include "ObjectGuid.h"
 #include "Pet.h"
 #include "Player.h"
+#include "SharedDefines.h"
 #include "ScriptMgr.h"
 #include "Unit.h"
 #include <cstdint>
@@ -629,7 +630,20 @@ public:
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        SpellPowerBonus = static_cast<int>((player->GetBaseSpellPowerBonus() * SoloCraftSpellMult) * difficulty);
+			SpellPowerBonus = 0;
+			// Loop through schools, update to highest bonus
+			for (int i = SPELL_SCHOOL_HOLY; i < MAX_SPELL_SCHOOL; ++i)
+			{
+			  int32 SpellSchoolBonus = player->SpellBaseDamageBonusDone(SpellSchoolMask(1 << i));
+			  SpellPowerBonus = (SpellSchoolBonus > SpellPowerBonus) ? SpellSchoolBonus : SpellPowerBonus;
+			}
+
+			// Check if healing is higher, use that
+			int32 SpellHealingBonus = player->SpellBaseHealingBonusDone(SPELL_SCHOOL_MASK_ALL);
+			SpellPowerBonus = (SpellHealingBonus > SpellPowerBonus) ? SpellHealingBonus : SpellPowerBonus;
+
+			// Calculate based on settings
+			SpellPowerBonus = (SpellPowerBonus * SoloCraftSpellMult) * difficulty;
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
                     }
                 }
@@ -640,7 +654,7 @@ public:
                     SoloCraftXPMod = 0;
                     if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
                         player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
-                }
+		}
 
                 // Announcements
                 if (difficulty > 0)
