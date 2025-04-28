@@ -629,7 +629,20 @@ public:
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        SpellPowerBonus = static_cast<int>((player->GetBaseSpellPowerBonus() * SoloCraftSpellMult) * difficulty);
+                        int32 maxBonus = 0;
+                        for (uint8 school = SPELL_SCHOOL_NORMAL; school <= MAX_SPELL_SCHOOL; ++school) {
+                            //SpellSchools spellSchool = static_cast<SpellSchools>(school);
+
+                            int32 damage = player->SpellBaseDamageBonusDone(SpellSchoolMask(1 << school));
+                            int32 healing = player->SpellBaseHealingBonusDone(SpellSchoolMask(1 << school));
+                            if (maxBonus < damage) {
+                                maxBonus = damage;
+                            }
+                            if (maxBonus < healing) {
+                                maxBonus = healing;
+                            }
+                        }
+                        SpellPowerBonus = static_cast<int>((maxBonus * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
                     }
                 }
