@@ -635,12 +635,10 @@ public:
 
                             int32 damage = player->SpellBaseDamageBonusDone(SpellSchoolMask(1 << school));
                             int32 healing = player->SpellBaseHealingBonusDone(SpellSchoolMask(1 << school));
-                            if (maxBonus < damage) {
-                                maxBonus = damage;
-                            }
-                            if (maxBonus < healing) {
-                                maxBonus = healing;
-                            }
+
+                            maxBonus = std::max(maxBonus, damage);
+                            maxBonus = std::max(maxBonus, healing);
+
                         }
                         SpellPowerBonus = static_cast<int>((maxBonus * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
