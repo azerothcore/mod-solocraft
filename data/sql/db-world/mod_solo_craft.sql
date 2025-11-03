@@ -1,0 +1,2 @@
+DELETE FROM `spell_dbc` WHERE `Id` = 150000;
+INSERT INTO `spell_dbc` (`Id`,`Attributes`,`Effect_1`,`EffectAura_1`,`EffectMiscValue_1`,`Name_Lang_enUS`,`ProcChance`,`RangeIndex`,`EquippedItemClass`) VALUES (150000,448,6,137,-1,"Solocraft Mod Stats Percentage",101,1,-1);

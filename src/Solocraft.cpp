@@ -1,3 +1,5 @@
+#include "SharedDefines.h"
+#include "SpellAuraEffects.h"
 #include "utils/Utils.h"
 #include "Chat.h"
 #include "Config.h"
@@ -41,6 +43,11 @@ float D25 = 1.0;
 float D40 = 1.0;
 float D649H10 = 1.0;
 float D649H25 = 1.0;
+
+enum SolocraftSpells
+{
+    SPELL_BUFF_STATS_PCT = 150000
+};
 
 class SolocraftConfig : public WorldScript
 {
@@ -336,6 +343,9 @@ public:
     {
         if (SoloCraftEnable && SoloCraftAnnounceModule)
             ChatHandler(player->GetSession()).SendSysMessage("This server is running the |cff4CFF00SoloCraft |rmodule.");
+
+        if (!player->HasAura(SPELL_BUFF_STATS_PCT))
+            player->AddAura(SPELL_BUFF_STATS_PCT, player);
     }
 
     void OnPlayerLogout(Player* player) override
@@ -506,13 +516,11 @@ public:
 
         if (result)
         {
-            float difficulty = (*result)[1].Get<float>();
             SpellPowerBonus = (*result)[3].Get<uint32>();
-            float StatsMultPct = (*result)[4].Get<float>();
             SoloCraftXPMod = 1.0;
 
-            for (uint32 i = STAT_STRENGTH; i < MAX_STATS; ++i)
-                player->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_PCT, difficulty * StatsMultPct, false);
+            if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
+                aurEff->ChangeAmount(0);            
 
             if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN) && !SolocraftNoXPFlag)
                 player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
@@ -589,17 +597,8 @@ public:
                 QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
 
                 // Modify Player Stats
-                // STATS defined/enum in SharedDefines.h
-                for (int32 i = STAT_STRENGTH; i < MAX_STATS; ++i)
-                {
-                    // Check for Dungeon to Dungeon Transfer and remove old buff
-                    if (result)
-                        player->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_PCT, (*result)[1].Get<float>() * (*result)[4].Get<float>(), false);
-                    // Buff the player
-                    // Unitmods enum UNIT_MOD_STAT_START defined in Unit.h line 391
-                    player->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_PCT, difficulty * SoloCraftStatsMult, true);
-
-                }
+                if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
+                    aurEff->ChangeAmount(difficulty * SoloCraftStatsMult);
 
                 // Set player health
                 // Defined in Unit.h line 1524
