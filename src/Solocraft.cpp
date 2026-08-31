@@ -346,6 +346,8 @@ public:
 
         if (!player->HasAura(SPELL_BUFF_STATS_PCT))
             player->AddAura(SPELL_BUFF_STATS_PCT, player);
+
+        UpdatePlayerInstanceState(player);
     }
 
     void OnPlayerLogout(Player* player) override
@@ -361,10 +363,7 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
-        if (player->GetMap()->IsDungeon() || player->GetMap()->IsRaid())
-            playerInInstanceMap[player->GetGUID()] = true;
-        else
-            playerInInstanceMap[player->GetGUID()] = false;
+        UpdatePlayerInstanceState(player);
     }
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
@@ -375,15 +374,28 @@ public:
             amount = uint32(amount * SoloCraftXPMod);
         }
     }
+
+private:
+    void UpdatePlayerInstanceState(Player* player)
+    {
+        Map* map = player->GetMap();
+        playerInInstanceMap[player->GetGUID()] = map && (map->IsDungeon() || map->IsRaid());
+    }
 };
 
 class SolocraftPlayerInstanceHandler : public PlayerScript
 {
 public:
     SolocraftPlayerInstanceHandler() : PlayerScript("SolocraftPlayerInstanceHandler", {
+        PLAYERHOOK_ON_LOGIN,
         PLAYERHOOK_ON_MAP_CHANGED
     }) {}
-    
+
+    void OnPlayerLogin(Player* player) override
+    {
+        UpdatePlayerScaling(player);
+    }
+
     bool IsInSolocraftInstanceExcludedList(uint32 id)
     {
         return find(SolocraftInstanceExcluded.begin(), SolocraftInstanceExcluded.end(), id) != SolocraftInstanceExcluded.end();
@@ -391,9 +403,17 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
+        UpdatePlayerScaling(player);
+    }
+
+    void UpdatePlayerScaling(Player* player)
+    {
         if (sConfigMgr->GetOption<bool>("Solocraft.Enable", true))
         {
             Map* map = player->GetMap();
+            if (!map)
+                return;
+
             float difficulty = CalculateDifficulty(map);
             uint32 dunLevel = CalculateDungeonLevel(map);
             uint32 numInGroup = GetNumInGroup(player);
