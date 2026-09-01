@@ -28,9 +28,9 @@ bool SolocraftXPEnabled = 1;
 bool SolocraftNoXPFlag = 0;
 float SoloCraftSpellMult = 1.0;
 float SoloCraftStatsMult = 100.0;
-float SoloCraftXPMod = 1.0;
 uint32 SolocraftLevelDiff = 1;
 uint32 SolocraftDungeonLevel = 1;
+std::map<ObjectGuid, float> SoloCraftXPMods;
 std::unordered_map<uint8, uint32> classes;
 std::unordered_map<uint32, uint32> dungeons;
 std::unordered_map<uint32, float> diff_Multiplier;
@@ -359,6 +359,7 @@ public:
             CharacterDatabase.Execute("DELETE FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         }
         playerInInstanceMap.erase(player->GetGUID());
+        SoloCraftXPMods.erase(player->GetGUID());
     }
 
     void OnPlayerMapChanged(Player* player) override
@@ -371,7 +372,9 @@ public:
         if (SolocraftXPBalEnabled && playerInInstanceMap[player->GetGUID()])
         {
             // Decrease Experience based on number of players and difficulty of instance (0 to 100%)
-            amount = uint32(amount * SoloCraftXPMod);
+            auto const itr = SoloCraftXPMods.find(player->GetGUID());
+            float const xpModifier = itr != SoloCraftXPMods.end() ? itr->second : 1.0f;
+            amount = uint32(amount * xpModifier);
         }
     }
 
@@ -530,6 +533,8 @@ public:
     // Resets buffers
     void ClearBuffs(Player* player, bool isLogin)
     {
+        SoloCraftXPMods[player->GetGUID()] = 1.0f;
+
         //Database query to get offset from the last instance player exited
         QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         uint32 SpellPowerBonus = 0;
@@ -537,8 +542,6 @@ public:
         if (result)
         {
             SpellPowerBonus = (*result)[3].Get<uint32>();
-            SoloCraftXPMod = 1.0;
-
             if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
                 aurEff->ChangeAmount(0);            
 
@@ -566,6 +569,8 @@ public:
             std::ostringstream ss;
 
             int SpellPowerBonus = 0;
+            float& xpModifier = SoloCraftXPMods[player->GetGUID()];
+            xpModifier = 1.0f;
 
             // Check for an existing No XP Gain flag - other mod compatibility
             if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
@@ -599,20 +604,20 @@ public:
                     difficulty = roundf(difficulty * 100) / 100;
 
                     // Set XP Modifier
-                    SoloCraftXPMod = (1.04 / difficulty) - 0.02;
-                    SoloCraftXPMod = roundf(SoloCraftXPMod * 100) / 100;
+                    xpModifier = (1.04 / difficulty) - 0.02;
+                    xpModifier = roundf(xpModifier * 100) / 100;
 
                     // Check for negative XP modifier - Disable XP Gain
-                    if (SoloCraftXPMod < 0)
+                    if (xpModifier < 0)
                     {
-                        SoloCraftXPMod = 0;
+                        xpModifier = 0;
                         if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN) && SolocraftXPBalEnabled)
                             player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
                     }
 
                     // Check XP modifier for over max limit and adjust
-                    if (SoloCraftXPMod > 1)
-                        SoloCraftXPMod = 1.0;
+                    if (xpModifier > 1)
+                        xpModifier = 1.0f;
                 }
 
                 // Check Database for a current dungeon entry
@@ -669,7 +674,7 @@ public:
                 // XP Gain Disabled
                 if (!SolocraftXPEnabled)
                 {
-                    SoloCraftXPMod = 0;
+                    xpModifier = 0;
                     if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
                         player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
                 }
