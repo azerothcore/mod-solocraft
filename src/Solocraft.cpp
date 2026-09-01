@@ -393,7 +393,7 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        UpdatePlayerScaling(player);
+        UpdatePlayerScaling(player, true);
     }
 
     bool IsInSolocraftInstanceExcludedList(uint32 id)
@@ -403,10 +403,10 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
-        UpdatePlayerScaling(player);
+        UpdatePlayerScaling(player, false);
     }
 
-    void UpdatePlayerScaling(Player* player)
+    void UpdatePlayerScaling(Player* player, bool isLogin)
     {
         if (sConfigMgr->GetOption<bool>("Solocraft.Enable", true))
         {
@@ -418,7 +418,7 @@ public:
             uint32 dunLevel = CalculateDungeonLevel(map);
             uint32 numInGroup = GetNumInGroup(player);
             uint32 classBalance = GetClassBalance(player);
-            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup, classBalance);
+            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup, classBalance, isLogin);
         }
     }
 
@@ -528,7 +528,7 @@ public:
     }
 
     // Resets buffers
-    void ClearBuffs(Player* player)
+    void ClearBuffs(Player* player, bool isLogin)
     {
         //Database query to get offset from the last instance player exited
         QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
@@ -549,16 +549,18 @@ public:
             CharacterDatabase.Execute("DELETE FROM custom_solocraft_character_stats WHERE GUID = {}", player->GetGUID().GetCounter());
         }
 
-        if (player->getPowerType() == POWER_MANA || player->getClass() == CLASS_DRUID)
+        if (!isLogin && (player->getPowerType() == POWER_MANA || player->getClass() == CLASS_DRUID))
             player->ApplySpellPowerBonus(SpellPowerBonus, false);
     }
 
     // Apply the player buffs
-    void ApplyBuffs(Player* player, Map* map, float difficulty, int dunLevel, int numInGroup, int classBalance)
+    void ApplyBuffs(Player* player, Map* map, float difficulty, int dunLevel, int numInGroup,
+        int classBalance, bool isLogin)
     {
         // Check whether to debuff back to normal or check to buff the player
         if (difficulty == 0 || IsInSolocraftInstanceExcludedList(map->GetId()))
-            ClearBuffs(player); // Check to revert player back to normal - Moving this here fixed logout and login while in instance buff and debuff issues
+            // Check to revert player back to normal. Keeping this here handles logout/login in an instance.
+            ClearBuffs(player, isLogin);
         else
         {
             std::ostringstream ss;
@@ -638,7 +640,7 @@ public:
                     player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
 
                     // Check for Dungeon to Dungeon Transfer and remove old Spellpower buff
-                    if (result)
+                    if (result && !isLogin)
                     {
                         // remove spellpower bonus
                         player->ApplySpellPowerBonus((*result)[3].Get<uint32>() * (*result)[4].Get<float>(), false);
@@ -718,7 +720,7 @@ public:
                 // Announce to player - Over Max Level Threshold
                 ss << "|cffFF0000[SoloCraft] |cffFF8000" << player->GetName() << " entered {}  - |cffFF0000You have not been buffed. |cffFF8000 Your level is higher than the max level ({}) threshold for this dungeon.";
                 ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str(), map->GetMapName(), dunLevel + SolocraftLevelDiff);
-                ClearBuffs(player); // Check to revert player back to normal
+                ClearBuffs(player, isLogin); // Check to revert player back to normal
             }
         }
     }
