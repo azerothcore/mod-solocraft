@@ -16,6 +16,7 @@
 #include <iostream>
 #include <map>
 #include <math.h>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -25,12 +26,10 @@ bool SoloCraftAnnounceModule = 1;
 bool SoloCraftDebuffEnable = 1;
 bool SolocraftXPBalEnabled = 1;
 bool SolocraftXPEnabled = 1;
-bool SolocraftNoXPFlag = 0;
 float SoloCraftSpellMult = 1.0;
 float SoloCraftStatsMult = 100.0;
 uint32 SolocraftLevelDiff = 1;
 uint32 SolocraftDungeonLevel = 1;
-std::map<ObjectGuid, float> SoloCraftXPMods;
 std::unordered_map<uint8, uint32> classes;
 std::unordered_map<uint32, uint32> dungeons;
 std::unordered_map<uint32, float> diff_Multiplier;
@@ -43,6 +42,79 @@ float D25 = 1.0;
 float D40 = 1.0;
 float D649H10 = 1.0;
 float D649H25 = 1.0;
+
+struct SoloCraftXPState
+{
+    float modifier = 1.0f;
+    bool ownsNoXPFlag = false;
+    bool inInstance = false;
+};
+
+std::map<ObjectGuid, SoloCraftXPState> SoloCraftXPStates;
+std::mutex SoloCraftXPStatesMutex;
+
+void SetSoloCraftXPModifier(ObjectGuid guid, float modifier)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    SoloCraftXPStates[guid].modifier = modifier;
+}
+
+float GetSoloCraftXPModifier(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    auto const itr = SoloCraftXPStates.find(guid);
+    return itr != SoloCraftXPStates.end() ? itr->second.modifier : 1.0f;
+}
+
+void SetSoloCraftOwnsNoXPFlag(ObjectGuid guid, bool ownsNoXPFlag)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    SoloCraftXPStates[guid].ownsNoXPFlag = ownsNoXPFlag;
+}
+
+bool DoesSoloCraftOwnNoXPFlag(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    auto const itr = SoloCraftXPStates.find(guid);
+    return itr != SoloCraftXPStates.end() && itr->second.ownsNoXPFlag;
+}
+
+void SetSoloCraftInInstance(ObjectGuid guid, bool inInstance)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    SoloCraftXPStates[guid].inInstance = inInstance;
+}
+
+bool IsSoloCraftInInstance(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    auto const itr = SoloCraftXPStates.find(guid);
+    return itr != SoloCraftXPStates.end() && itr->second.inInstance;
+}
+
+void EraseSoloCraftXPState(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    SoloCraftXPStates.erase(guid);
+}
+
+void DisableXPForSoloCraft(Player* player)
+{
+    if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
+    {
+        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+        SetSoloCraftOwnsNoXPFlag(player->GetGUID(), true);
+    }
+}
+
+void RestoreXPDisabledBySoloCraft(Player* player)
+{
+    if (!DoesSoloCraftOwnNoXPFlag(player->GetGUID()))
+        return;
+
+    player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+    SetSoloCraftOwnsNoXPFlag(player->GetGUID(), false);
+}
 
 enum SolocraftSpells
 {
@@ -328,12 +400,10 @@ public:
 
 class SolocraftAnnounce : public PlayerScript
 {
-private:
-    std::map<ObjectGuid, bool> playerInInstanceMap;
-
 public:
     SolocraftAnnounce() : PlayerScript("SolocraftAnnounce", {
         PLAYERHOOK_ON_LOGIN,
+        PLAYERHOOK_ON_BEFORE_LOGOUT,
         PLAYERHOOK_ON_LOGOUT,
         PLAYERHOOK_ON_MAP_CHANGED,
         PLAYERHOOK_ON_GIVE_EXP
@@ -350,6 +420,13 @@ public:
         UpdatePlayerInstanceState(player);
     }
 
+    void OnPlayerBeforeLogout(Player* player) override
+    {
+        // This hook runs before Player::SaveToDB, so an XP flag owned by
+        // SoloCraft is not persisted after the module's database row is removed.
+        RestoreXPDisabledBySoloCraft(player);
+    }
+
     void OnPlayerLogout(Player* player) override
     {
         QueryResult result = CharacterDatabase.Query("SELECT `GUID` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
@@ -358,8 +435,7 @@ public:
             //Remove database entry as the player has logged out
             CharacterDatabase.Execute("DELETE FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         }
-        playerInInstanceMap.erase(player->GetGUID());
-        SoloCraftXPMods.erase(player->GetGUID());
+        EraseSoloCraftXPState(player->GetGUID());
     }
 
     void OnPlayerMapChanged(Player* player) override
@@ -369,12 +445,10 @@ public:
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
     {
-        if (SolocraftXPBalEnabled && playerInInstanceMap[player->GetGUID()])
+        if (SolocraftXPBalEnabled && IsSoloCraftInInstance(player->GetGUID()))
         {
             // Decrease Experience based on number of players and difficulty of instance (0 to 100%)
-            auto const itr = SoloCraftXPMods.find(player->GetGUID());
-            float const xpModifier = itr != SoloCraftXPMods.end() ? itr->second : 1.0f;
-            amount = uint32(amount * xpModifier);
+            amount = uint32(amount * GetSoloCraftXPModifier(player->GetGUID()));
         }
     }
 
@@ -382,7 +456,7 @@ private:
     void UpdatePlayerInstanceState(Player* player)
     {
         Map* map = player->GetMap();
-        playerInInstanceMap[player->GetGUID()] = map && (map->IsDungeon() || map->IsRaid());
+        SetSoloCraftInInstance(player->GetGUID(), map && (map->IsDungeon() || map->IsRaid()));
     }
 };
 
@@ -423,6 +497,8 @@ public:
             uint32 classBalance = GetClassBalance(player);
             ApplyBuffs(player, map, difficulty, dunLevel, numInGroup, classBalance, isLogin);
         }
+        else
+            ClearBuffs(player, isLogin);
     }
 
     // Set the instance difficulty
@@ -533,24 +609,25 @@ public:
     // Resets buffers
     void ClearBuffs(Player* player, bool isLogin)
     {
-        SoloCraftXPMods[player->GetGUID()] = 1.0f;
+        SetSoloCraftXPModifier(player->GetGUID(), 1.0f);
 
         //Database query to get offset from the last instance player exited
-        QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
+        QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats`, `NoXP` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
         uint32 SpellPowerBonus = 0;
 
         if (result)
         {
             SpellPowerBonus = (*result)[3].Get<uint32>();
+            if ((*result)[5].Get<uint8>() != 0)
+                SetSoloCraftOwnsNoXPFlag(player->GetGUID(), true);
+
             if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
                 aurEff->ChangeAmount(0);            
 
-            if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN) && !SolocraftNoXPFlag)
-                player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
-
-            SolocraftNoXPFlag = 0;
             CharacterDatabase.Execute("DELETE FROM custom_solocraft_character_stats WHERE GUID = {}", player->GetGUID().GetCounter());
         }
+
+        RestoreXPDisabledBySoloCraft(player);
 
         if (!isLogin && (player->getPowerType() == POWER_MANA || player->getClass() == CLASS_DRUID))
             player->ApplySpellPowerBonus(SpellPowerBonus, false);
@@ -569,12 +646,15 @@ public:
             std::ostringstream ss;
 
             int SpellPowerBonus = 0;
-            float& xpModifier = SoloCraftXPMods[player->GetGUID()];
-            xpModifier = 1.0f;
+            float xpModifier = 1.0f;
+            bool disableXP = false;
 
-            // Check for an existing No XP Gain flag - other mod compatibility
-            if (player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
-                SolocraftNoXPFlag = 1;
+            // Check Database for a current dungeon entry. This also restores
+            // ownership after a server restart before deciding the new XP state.
+            QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats`, `NoXP` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
+
+            if (result && (*result)[5].Get<uint8>() != 0)
+                SetSoloCraftOwnsNoXPFlag(player->GetGUID(), true);
 
             // If a player is too high level for dungeon don't buff but if in a group will count towards the group offset balancing.
             if (player->GetLevel() <= dunLevel + SolocraftLevelDiff)
@@ -592,8 +672,8 @@ public:
                     difficulty = roundf(difficulty * 100) / 100;
 
                     // Disable player XP gain if debuff applied
-                    if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN) && SolocraftXPBalEnabled)
-                        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+                    if (SolocraftXPBalEnabled)
+                        disableXP = true;
                 }
                 else
                 {
@@ -611,17 +691,14 @@ public:
                     if (xpModifier < 0)
                     {
                         xpModifier = 0;
-                        if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN) && SolocraftXPBalEnabled)
-                            player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+                        if (SolocraftXPBalEnabled)
+                            disableXP = true;
                     }
 
                     // Check XP modifier for over max limit and adjust
                     if (xpModifier > 1)
                         xpModifier = 1.0f;
                 }
-
-                // Check Database for a current dungeon entry
-                QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
 
                 // Modify Player Stats
                 if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
@@ -675,9 +752,15 @@ public:
                 if (!SolocraftXPEnabled)
                 {
                     xpModifier = 0;
-                    if (!player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN))
-                        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_NO_XP_GAIN);
+                    disableXP = true;
                 }
+
+                if (disableXP)
+                    DisableXPForSoloCraft(player);
+                else
+                    RestoreXPDisabledBySoloCraft(player);
+
+                SetSoloCraftXPModifier(player->GetGUID(), xpModifier);
 
                 // Announcements
                 if (difficulty > 0)
@@ -718,7 +801,7 @@ public:
                 }
 
                 // Save Player Dungeon Offsets to Database
-                CharacterDatabase.Execute("REPLACE INTO custom_solocraft_character_stats (GUID, Difficulty, GroupSize, SpellPower, Stats) VALUES ({}, {}, {}, {}, {})", player->GetGUID().GetCounter(), difficulty, numInGroup, SpellPowerBonus, SoloCraftStatsMult);
+                CharacterDatabase.Execute("REPLACE INTO custom_solocraft_character_stats (GUID, Difficulty, GroupSize, SpellPower, Stats, NoXP) VALUES ({}, {}, {}, {}, {}, {})", player->GetGUID().GetCounter(), difficulty, numInGroup, SpellPowerBonus, SoloCraftStatsMult, uint32(DoesSoloCraftOwnNoXPFlag(player->GetGUID())));
             }
             else
             {
