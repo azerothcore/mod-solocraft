@@ -48,20 +48,22 @@ struct SoloCraftXPState
     float modifier = 1.0f;
     bool ownsNoXPFlag = false;
     bool inInstance = false;
-    // Tracks the SoloCraft spell-power bonus, if any, currently live on *this
-    // in-memory Player object* - the amount actually passed to the last
-    // ApplySpellPowerBonus(..., true) call, independent of what is persisted in
-    // custom_solocraft_character_stats. A fresh process (real crash/restart) starts
-    // with no entries here, so nothing is wrongly removed from a clean object. A
-    // player (bot or otherwise) that receives another PLAYERHOOK_ON_LOGIN without
-    // the process having restarted still has the bonus live in memory, so it must
-    // be reversed (using this remembered amount, not a database round-trip) before
-    // a new one is computed - otherwise the new bonus is derived from an
-    // already-inflated spell power and stacks without bound. Keeping the removal
-    // purely in-memory also avoids racing the asynchronous DB write used to persist
-    // this value: OnPlayerMapChanged and OnPlayerLogin both fire on a single login,
-    // so a removal gated on reading the row back could still be lost if the prior
-    // REPLACE INTO hadn't landed yet.
+    // Tracks the SoloCraft spell-power bonus, if any, currently live on
+    // *this in-memory Player object* - the amount actually passed to the
+    // last ApplySpellPowerBonus(..., true) call, independent of what is
+    // persisted in custom_solocraft_character_stats. A fresh process (real
+    // crash/restart) starts with no entries here, so nothing is wrongly
+    // removed from a clean object. A player (bot or otherwise) that gets
+    // another PLAYERHOOK_ON_LOGIN without the process having restarted
+    // still has the bonus live in memory, so it must be reversed (using
+    // this remembered amount, not a database round-trip) before a new one
+    // is computed - otherwise the new bonus is derived from an
+    // already-inflated spell power and stacks without bound. Keeping the
+    // removal purely in-memory also avoids racing the asynchronous DB
+    // write used to persist this value: OnPlayerMapChanged and
+    // OnPlayerLogin both fire on a single login, so a removal gated on
+    // reading the row back could still be lost if the prior REPLACE INTO
+    // hadn't landed yet.
     bool hasLiveSpellPowerBonus = false;
     uint32 liveSpellPowerBonus = 0;
 };
@@ -535,7 +537,8 @@ public:
             uint32 dunLevel = CalculateDungeonLevel(map);
             uint32 numInGroup = GetNumInGroup(player);
             uint32 classBalance = GetClassBalance(player);
-            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup, classBalance);
+            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup,
+                       classBalance);
         }
         else
             ClearBuffs(player);
@@ -667,7 +670,8 @@ public:
 
         RestoreXPDisabledBySoloCraft(player);
 
-        if (player->getPowerType() == POWER_MANA || player->getClass() == CLASS_DRUID)
+        if (player->getPowerType() == POWER_MANA ||
+            player->getClass() == CLASS_DRUID)
             RemoveSoloCraftLiveSpellPowerBonus(player);
     }
 
@@ -759,38 +763,50 @@ public:
                     // Buff the player's mana
                     player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
 
-                    // Remove the previous SoloCraft spell-power bonus, if any is still live
-                    // on this Player object (see the struct comment above). This never reads
-                    // the database: OnPlayerMapChanged and OnPlayerLogin both fire on a single
-                    // login, so a removal gated on reading `custom_solocraft_character_stats`
-                    // back could race the still-pending asynchronous write from the other
-                    // hook's own apply and wrongly skip the removal, stacking a second bonus
-                    // on top of the first. (An earlier version also multiplied the stored
-                    // amount by the unrelated `Stats` column, over-removing by up to 100x.)
+                    // Remove the previous SoloCraft spell-power bonus, if
+                    // any is still live on this Player object (see the
+                    // struct comment above). This never reads the
+                    // database: OnPlayerMapChanged and OnPlayerLogin both
+                    // fire on a single login, so a removal gated on
+                    // reading `custom_solocraft_character_stats` back
+                    // could race the still-pending asynchronous write
+                    // from the other hook's own apply and wrongly skip
+                    // the removal, stacking a second bonus on top of the
+                    // first. (An earlier version also multiplied the
+                    // stored amount by the unrelated `Stats` column,
+                    // over-removing by up to 100x.)
                     RemoveSoloCraftLiveSpellPowerBonus(player);
 
                     // Buff Spellpower
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        // Use only the flat, item-derived spell power/damage/healing bonus
-                        // (gear + scaling-stat items), never SpellBaseDamageBonusDone /
-                        // SpellBaseHealingBonusDone: those also fold in dynamic, stat-based
-                        // bonuses (e.g. SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT) computed
-                        // from the player's CURRENT Intellect/Spirit - which the %-stat buff
-                        // just above just inflated. Reading that dynamic total here creates a
-                        // feedback loop: each fresh application (e.g. every time a Playerbot
-                        // bot is disconnected and reconnected, which reloads the persisted
-                        // %-stat aura at its last live amount before this hook even runs)
-                        // computes a bigger bonus than the last, without any of the numbers
+                        // Use only the flat, item-derived spell
+                        // power/damage/healing bonus (gear + scaling-stat
+                        // items), never SpellBaseDamageBonusDone /
+                        // SpellBaseHealingBonusDone: those also fold in
+                        // dynamic, stat-based bonuses (e.g.
+                        // SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT)
+                        // computed from the player's CURRENT
+                        // Intellect/Spirit - which the %-stat buff just
+                        // above just inflated. Reading that dynamic total
+                        // here creates a feedback loop: each fresh
+                        // application (e.g. every time a Playerbot bot is
+                        // disconnected and reconnected, which reloads the
+                        // persisted %-stat aura at its last live amount
+                        // before this hook even runs) computes a bigger
+                        // bonus than the last, without any of the numbers
                         // ever needing to be wrong on their own — see
-                        // https://github.com/azerothcore/mod-solocraft/issues/65.
-                        int32 maxBonus = std::max({static_cast<int32>(player->GetBaseSpellPowerBonus()),
-                                                    static_cast<int32>(player->GetBaseSpellDamageBonus()),
-                                                    static_cast<int32>(player->GetBaseSpellHealingBonus())});
+                        // https://github.com/azerothcore/mod-solocraft/
+                        // issues/65.
+                        uint32 maxBonus = std::max({
+                            player->GetBaseSpellPowerBonus(),
+                            player->GetBaseSpellDamageBonus(),
+                            player->GetBaseSpellHealingBonus()});
                         SpellPowerBonus = static_cast<int>((maxBonus * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
-                        SetSoloCraftLiveSpellPowerBonus(player->GetGUID(), SpellPowerBonus);
+                        SetSoloCraftLiveSpellPowerBonus(player->GetGUID(),
+                                                         SpellPowerBonus);
                     }
                 }
 
