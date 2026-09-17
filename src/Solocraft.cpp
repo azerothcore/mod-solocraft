@@ -48,6 +48,24 @@ struct SoloCraftXPState
     float modifier = 1.0f;
     bool ownsNoXPFlag = false;
     bool inInstance = false;
+    // Tracks the SoloCraft spell-power bonus, if any, currently live on
+    // *this in-memory Player object* - the amount actually passed to the
+    // last ApplySpellPowerBonus(..., true) call, independent of what is
+    // persisted in custom_solocraft_character_stats. A fresh process (real
+    // crash/restart) starts with no entries here, so nothing is wrongly
+    // removed from a clean object. A player (bot or otherwise) that gets
+    // another PLAYERHOOK_ON_LOGIN without the process having restarted
+    // still has the bonus live in memory, so it must be reversed (using
+    // this remembered amount, not a database round-trip) before a new one
+    // is computed - otherwise the new bonus is derived from an
+    // already-inflated spell power and stacks without bound. Keeping the
+    // removal purely in-memory also avoids racing the asynchronous DB
+    // write used to persist this value: OnPlayerMapChanged and
+    // OnPlayerLogin both fire on a single login, so a removal gated on
+    // reading the row back could still be lost if the prior REPLACE INTO
+    // hadn't landed yet.
+    bool hasLiveSpellPowerBonus = false;
+    uint32 liveSpellPowerBonus = 0;
 };
 
 std::map<ObjectGuid, SoloCraftXPState> SoloCraftXPStates;
@@ -96,6 +114,30 @@ void EraseSoloCraftXPState(ObjectGuid guid)
 {
     std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
     SoloCraftXPStates.erase(guid);
+}
+
+void SetSoloCraftLiveSpellPowerBonus(ObjectGuid guid, uint32 amount)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    SoloCraftXPState& state = SoloCraftXPStates[guid];
+    state.hasLiveSpellPowerBonus = true;
+    state.liveSpellPowerBonus = amount;
+}
+
+// Removes the SoloCraft spell-power bonus this process actually applied to this
+// player's live stats, if any - never a value read back from the database, so
+// this cannot race the asynchronous write that persists it (see the struct
+// comment above). Safe to call unconditionally: a no-op when nothing is live.
+void RemoveSoloCraftLiveSpellPowerBonus(Player* player)
+{
+    std::lock_guard<std::mutex> lock(SoloCraftXPStatesMutex);
+    auto const itr = SoloCraftXPStates.find(player->GetGUID());
+    if (itr == SoloCraftXPStates.end() || !itr->second.hasLiveSpellPowerBonus)
+        return;
+
+    player->ApplySpellPowerBonus(itr->second.liveSpellPowerBonus, false);
+    itr->second.hasLiveSpellPowerBonus = false;
+    itr->second.liveSpellPowerBonus = 0;
 }
 
 void DisableXPForSoloCraft(Player* player)
@@ -470,7 +512,7 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        UpdatePlayerScaling(player, true);
+        UpdatePlayerScaling(player);
     }
 
     bool IsInSolocraftInstanceExcludedList(uint32 id)
@@ -480,10 +522,10 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
-        UpdatePlayerScaling(player, false);
+        UpdatePlayerScaling(player);
     }
 
-    void UpdatePlayerScaling(Player* player, bool isLogin)
+    void UpdatePlayerScaling(Player* player)
     {
         if (sConfigMgr->GetOption<bool>("Solocraft.Enable", true))
         {
@@ -495,10 +537,11 @@ public:
             uint32 dunLevel = CalculateDungeonLevel(map);
             uint32 numInGroup = GetNumInGroup(player);
             uint32 classBalance = GetClassBalance(player);
-            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup, classBalance, isLogin);
+            ApplyBuffs(player, map, difficulty, dunLevel, numInGroup,
+                       classBalance);
         }
         else
-            ClearBuffs(player, isLogin);
+            ClearBuffs(player);
     }
 
     // Set the instance difficulty
@@ -607,40 +650,39 @@ public:
     }
 
     // Resets buffers
-    void ClearBuffs(Player* player, bool isLogin)
+    void ClearBuffs(Player* player)
     {
         SetSoloCraftXPModifier(player->GetGUID(), 1.0f);
 
         //Database query to get offset from the last instance player exited
         QueryResult result = CharacterDatabase.Query("SELECT `GUID`, `Difficulty`, `GroupSize`, `SpellPower`, `Stats`, `NoXP` FROM `custom_solocraft_character_stats` WHERE `GUID`={}", player->GetGUID().GetCounter());
-        uint32 SpellPowerBonus = 0;
 
         if (result)
         {
-            SpellPowerBonus = (*result)[3].Get<uint32>();
             if ((*result)[5].Get<uint8>() != 0)
                 SetSoloCraftOwnsNoXPFlag(player->GetGUID(), true);
 
             if (AuraEffect* aurEff = player->GetAuraEffect(SPELL_BUFF_STATS_PCT, EFFECT_0))
-                aurEff->ChangeAmount(0);            
+                aurEff->ChangeAmount(0);
 
             CharacterDatabase.Execute("DELETE FROM custom_solocraft_character_stats WHERE GUID = {}", player->GetGUID().GetCounter());
         }
 
         RestoreXPDisabledBySoloCraft(player);
 
-        if (!isLogin && (player->getPowerType() == POWER_MANA || player->getClass() == CLASS_DRUID))
-            player->ApplySpellPowerBonus(SpellPowerBonus, false);
+        if (player->getPowerType() == POWER_MANA ||
+            player->getClass() == CLASS_DRUID)
+            RemoveSoloCraftLiveSpellPowerBonus(player);
     }
 
     // Apply the player buffs
     void ApplyBuffs(Player* player, Map* map, float difficulty, int dunLevel, int numInGroup,
-        int classBalance, bool isLogin)
+        int classBalance)
     {
         // Check whether to debuff back to normal or check to buff the player
         if (difficulty == 0 || IsInSolocraftInstanceExcludedList(map->GetId()))
             // Check to revert player back to normal. Keeping this here handles logout/login in an instance.
-            ClearBuffs(player, isLogin);
+            ClearBuffs(player);
         else
         {
             std::ostringstream ss;
@@ -721,30 +763,50 @@ public:
                     // Buff the player's mana
                     player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
 
-                    // Check for Dungeon to Dungeon Transfer and remove old Spellpower buff
-                    if (result && !isLogin)
-                    {
-                        // remove spellpower bonus
-                        player->ApplySpellPowerBonus((*result)[3].Get<uint32>() * (*result)[4].Get<float>(), false);
-                    }
+                    // Remove the previous SoloCraft spell-power bonus, if
+                    // any is still live on this Player object (see the
+                    // struct comment above). This never reads the
+                    // database: OnPlayerMapChanged and OnPlayerLogin both
+                    // fire on a single login, so a removal gated on
+                    // reading `custom_solocraft_character_stats` back
+                    // could race the still-pending asynchronous write
+                    // from the other hook's own apply and wrongly skip
+                    // the removal, stacking a second bonus on top of the
+                    // first. (An earlier version also multiplied the
+                    // stored amount by the unrelated `Stats` column,
+                    // over-removing by up to 100x.)
+                    RemoveSoloCraftLiveSpellPowerBonus(player);
 
                     // Buff Spellpower
                     // Debuffed characters do not get spellpower
                     if (difficulty > 0)
                     {
-                        int32 maxBonus = 0;
-                        for (uint8 school = SPELL_SCHOOL_NORMAL; school <= MAX_SPELL_SCHOOL; ++school) {
-                            //SpellSchools spellSchool = static_cast<SpellSchools>(school);
-
-                            int32 damage = player->SpellBaseDamageBonusDone(SpellSchoolMask(1 << school));
-                            int32 healing = player->SpellBaseHealingBonusDone(SpellSchoolMask(1 << school));
-
-                            maxBonus = std::max(maxBonus, damage);
-                            maxBonus = std::max(maxBonus, healing);
-
-                        }
+                        // Use only the flat, item-derived spell
+                        // power/damage/healing bonus (gear + scaling-stat
+                        // items), never SpellBaseDamageBonusDone /
+                        // SpellBaseHealingBonusDone: those also fold in
+                        // dynamic, stat-based bonuses (e.g.
+                        // SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT)
+                        // computed from the player's CURRENT
+                        // Intellect/Spirit - which the %-stat buff just
+                        // above just inflated. Reading that dynamic total
+                        // here creates a feedback loop: each fresh
+                        // application (e.g. every time a Playerbot bot is
+                        // disconnected and reconnected, which reloads the
+                        // persisted %-stat aura at its last live amount
+                        // before this hook even runs) computes a bigger
+                        // bonus than the last, without any of the numbers
+                        // ever needing to be wrong on their own — see
+                        // https://github.com/azerothcore/mod-solocraft/
+                        // issues/65.
+                        uint32 maxBonus = std::max({
+                            player->GetBaseSpellPowerBonus(),
+                            player->GetBaseSpellDamageBonus(),
+                            player->GetBaseSpellHealingBonus()});
                         SpellPowerBonus = static_cast<int>((maxBonus * SoloCraftSpellMult) * difficulty);
                         player->ApplySpellPowerBonus(SpellPowerBonus, true);
+                        SetSoloCraftLiveSpellPowerBonus(player->GetGUID(),
+                                                         SpellPowerBonus);
                     }
                 }
 
@@ -808,7 +870,7 @@ public:
                 // Announce to player - Over Max Level Threshold
                 ss << "|cffFF0000[SoloCraft] |cffFF8000" << player->GetName() << " entered {}  - |cffFF0000You have not been buffed. |cffFF8000 Your level is higher than the max level ({}) threshold for this dungeon.";
                 ChatHandler(player->GetSession()).PSendSysMessage(ss.str().c_str(), map->GetMapName(), dunLevel + SolocraftLevelDiff);
-                ClearBuffs(player, isLogin); // Check to revert player back to normal
+                ClearBuffs(player); // Check to revert player back to normal
             }
         }
     }
